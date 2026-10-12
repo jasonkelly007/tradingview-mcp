@@ -125,9 +125,7 @@ mcp = FastMCP(
         "futures_category_snapshot, futures_watchlist, egx_market_overview, and more."
     ),
     transport_security=TransportSecuritySettings(
-        enable_dns_rebinding_protection=True,
-        allowed_hosts=["*"],
-        allowed_origins=["*"],
+        enable_dns_rebinding_protection=False,
     ),
 )
 
