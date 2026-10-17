@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hmac
 import os
+import sys
 from typing import Optional
 
 # Eagerly import pandas on the main thread. Several tools route through
@@ -1256,6 +1258,67 @@ def _offload_sync_tools() -> int:
 _OFFLOADED_TOOL_COUNT = _offload_sync_tools()
 
 
+# ── Inbound auth (streamable-http transport) ─────────────────────────────────
+class _BearerAuthASGI:
+    """Minimal bearer-token gate for the publicly-exposed ``/mcp`` endpoint.
+
+    Wraps the Starlette app returned by ``mcp.streamable_http_app()`` and
+    rejects any request to a protected path that does not carry
+    ``Authorization: Bearer <MCP_AUTH_TOKEN>``. The token is compared in
+    constant time. ``/health`` is left open for liveness probes and container
+    HEALTHCHECKs.
+
+    If ``MCP_AUTH_TOKEN`` is unset the gate is disabled (endpoint stays open)
+    so local stdio/dev usage keeps working — set the variable in Railway to
+    lock the endpoint down.
+    """
+
+    def __init__(self, app, token: str | None, protected_prefixes: tuple[str, ...] = ("/mcp",)):
+        self.app = app
+        self.token = (token or "").strip()
+        self.protected = protected_prefixes
+
+    async def __call__(self, scope, receive, send):
+        # Only gate HTTP requests, and only when a token is configured.
+        if scope.get("type") != "http" or not self.token:
+            return await self.app(scope, receive, send)
+
+        path = scope.get("path", "")
+        if not any(path.startswith(prefix) for prefix in self.protected):
+            return await self.app(scope, receive, send)
+
+        # Case-insensitive "Bearer <token>" scheme; constant-time token compare.
+        auth_header = ""
+        for name, value in scope.get("headers", []):
+            if name.lower() == b"authorization":
+                auth_header = value.decode("latin-1").strip()
+                break
+        scheme, _, presented = auth_header.partition(" ")
+        valid = scheme.lower() == "bearer" and hmac.compare_digest(
+            presented.strip().encode("latin-1"), self.token.encode("latin-1")
+        )
+        if not valid:
+            return await self._unauthorized(send)
+
+        return await self.app(scope, receive, send)
+
+    @staticmethod
+    async def _unauthorized(send):
+        body = b'{"error":"unauthorized","message":"Missing or invalid bearer token"}'
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 401,
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"content-length", str(len(body)).encode("latin-1")),
+                    (b"www-authenticate", b'Bearer realm="tradingview-mcp"'),
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": body})
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="TradingView Screener MCP server")
     parser.add_argument(
@@ -1276,12 +1339,21 @@ def main() -> None:
     if args.transport == "stdio":
         mcp.run()
     else:
-        try:
-            mcp.settings.host = args.host
-            mcp.settings.port = args.port
-        except Exception:
-            pass
-        mcp.run(transport="streamable-http")
+        import uvicorn
+
+        auth_token = os.environ.get("MCP_AUTH_TOKEN", "").strip()
+        if not auth_token:
+            print(
+                "[SECURITY] MCP_AUTH_TOKEN is NOT set — the /mcp endpoint is OPEN to "
+                "anyone who can reach the URL. Set MCP_AUTH_TOKEN in Railway to require "
+                "a bearer token on every request.",
+                file=sys.stderr,
+                flush=True,
+            )
+        # Build the streamable-http ASGI app and gate it behind the bearer token.
+        # uvicorn handles the lifespan, which runs the session manager.
+        app = _BearerAuthASGI(mcp.streamable_http_app(), auth_token)
+        uvicorn.run(app, host=args.host, port=args.port)
 
 
 if __name__ == "__main__":
