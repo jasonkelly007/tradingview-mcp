@@ -1333,7 +1333,6 @@ def main() -> None:
     args = parser.parse_args()
 
     if os.environ.get("DEBUG_MCP"):
-        import sys
         print(f"[DEBUG_MCP] pkg cwd={os.getcwd()} argv={sys.argv} file={__file__}", file=sys.stderr, flush=True)
 
     if args.transport == "stdio":
