@@ -50,10 +50,6 @@ class TestToolBoundary:
         result = server.coin_analysis("BTCUSDT", exchange="KUCOIN", timeframe="30m")
         assert result["error"]["code"] == "INVALID_TIMEFRAME"
 
-    def test_egx_tool_returns_invalid_timeframe_envelope(self):
-        result = server.egx_market_overview(timeframe="2h")
-        assert result["error"]["code"] == "INVALID_TIMEFRAME"
-
     def test_combined_analysis_rejects_bad_exchange(self):
         result = asyncio.run(server.combined_analysis("AAPL", exchange="NOPE"))
         assert result["error"]["code"] == "INVALID_EXCHANGE"

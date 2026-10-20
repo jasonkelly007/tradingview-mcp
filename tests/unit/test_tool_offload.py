@@ -19,7 +19,7 @@ def _tools():
 def test_every_tool_is_async_after_offload():
     still_sync = [t.name for t in _tools() if not t.is_async or not inspect.iscoroutinefunction(t.fn)]
     assert still_sync == [], f"tools still blocking the event loop: {still_sync}"
-    assert server._OFFLOADED_TOOL_COUNT >= 25  # the historical sync set
+    assert server._OFFLOADED_TOOL_COUNT >= 20  # sanity floor: offload wraps the real sync set (not ~0)
 
 
 def test_wrapped_tool_still_returns_the_original_result(monkeypatch):

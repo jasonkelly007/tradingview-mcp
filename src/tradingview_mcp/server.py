@@ -46,22 +46,12 @@ from tradingview_mcp.core.services.scanner_service import (
     smart_volume_scan,
 )
 from tradingview_mcp.core.services.multi_agent_service import run_multi_agent_analysis
-from tradingview_mcp.core.services.egx_service import (
-    get_egx_market_overview,
-    scan_egx_sector,
-    run_egx_sector_scanner,
-    analyze_egx_index,
-    screen_egx_stocks,
-    generate_egx_trade_plan,
-    analyze_egx_fibonacci,
-)
 from tradingview_mcp.core.services.marketaux_service import (
     analyze_sentiment,
     fetch_news_summary,
 )
 from tradingview_mcp.core.services.smart_money_service import (
     analyze_smart_money,
-    scan_egx_smart_money,
 )
 from tradingview_mcp.core.services.yahoo_finance_service import (
     get_price,
@@ -119,12 +109,12 @@ mcp = FastMCP(
     instructions=(
         "Multi-market screener backed by TradingView. "
         "Supports crypto exchanges (KuCoin, Binance, Bybit, MEXC, etc.), stock markets "
-        "(EGX, BIST, NASDAQ, NYSE, Bursa Malaysia, HKEX, SSE, SZSE, TWSE, TPEX), "
+        "(NASDAQ, NYSE, AMEX, BIST, Bursa Malaysia, HKEX, SSE, SZSE, TWSE, TPEX), "
         "and futures markets (CME, COMEX, NYMEX, CBOT — equity index, energy, metals, "
         "agriculture, rates, forex, crypto futures). "
         "Tools: top_gainers, top_losers, bollinger_scan, coin_analysis, multi_agent_analysis, "
         "volume_breakout_scanner, futures_market_overview, futures_top_movers, "
-        "futures_category_snapshot, futures_watchlist, egx_market_overview, and more."
+        "futures_category_snapshot, futures_watchlist, combined_analysis, and more."
     ),
     transport_security=TransportSecuritySettings(
         enable_dns_rebinding_protection=False,
@@ -466,140 +456,6 @@ def multi_agent_analysis(symbol: str, exchange: str = "KUCOIN", timeframe: str =
         return exception_to_envelope(e, context="multi_agent_analysis")
 
 
-# ── EGX market tools ───────────────────────────────────────────────────────────
-
-@mcp.tool(annotations=ToolAnnotations(title="EGX Market Overview", readOnlyHint=True, destructiveHint=False, openWorldHint=True))
-def egx_market_overview(timeframe: str = "1D", limit: int = 10) -> dict:
-    """Get a comprehensive overview of the Egyptian Exchange (EGX) market.
-
-    Args:
-        timeframe: One of 5m, 15m, 1h, 4h, 1D, 1W, 1M (default 1D for stocks)
-        limit: Number of stocks per category (max 20)
-    """
-    limit = max(1, min(limit, 20))
-    try:
-        timeframe = validate_timeframe(timeframe, "1D")
-        return get_egx_market_overview(timeframe, limit)
-    except Exception as e:
-        return exception_to_envelope(e, context="egx_market_overview")
-
-
-@mcp.tool(annotations=ToolAnnotations(title="EGX Sector Scan", readOnlyHint=True, destructiveHint=False, openWorldHint=True))
-def egx_sector_scan(sector: str = "", timeframe: str = "1D", limit: int = 20) -> dict:
-    """Scan EGX stocks by sector. Shows available sectors if none specified.
-
-    Args:
-        sector: Sector name (banks, healthcare_and_pharma, real_estate, etc.)
-                Leave empty to list all sectors.
-        timeframe: One of 5m, 15m, 1h, 4h, 1D, 1W, 1M
-        limit: Max results per sector (max 50)
-    """
-    limit = max(1, min(limit, 50))
-    try:
-        timeframe = validate_timeframe(timeframe, "1D")
-        return scan_egx_sector(sector, timeframe, limit)
-    except Exception as e:
-        return exception_to_envelope(e, context="egx_sector_scan")
-
-
-@mcp.tool(annotations=ToolAnnotations(title="EGX Sector Rotation Scanner", readOnlyHint=True, destructiveHint=False, openWorldHint=True))
-def egx_sector_scanner(
-    timeframe: str = "1D",
-    top_n_sectors: int = 5,
-    top_n_stocks: int = 3,
-    min_stock_score: int = 60,
-) -> dict:
-    """Sector rotation scanner for EGX — identifies hot/cold sectors and top picks.
-
-    Args:
-        timeframe: One of 5m, 15m, 1h, 4h, 1D, 1W, 1M (default 1D)
-        top_n_sectors: Number of top sectors to show stock picks for (1-18, default 5)
-        top_n_stocks: Number of top stocks per highlighted sector (1-10, default 3)
-        min_stock_score: Minimum stock score for picks (0-100, default 60)
-    """
-    top_n_sectors = max(1, min(18, top_n_sectors))
-    top_n_stocks = max(1, min(10, top_n_stocks))
-    min_stock_score = max(0, min(100, min_stock_score))
-    try:
-        timeframe = validate_timeframe(timeframe, "1D")
-        return run_egx_sector_scanner(timeframe, top_n_sectors, top_n_stocks, min_stock_score)
-    except Exception as e:
-        return exception_to_envelope(e, context="egx_sector_scanner")
-
-
-@mcp.tool(annotations=ToolAnnotations(title="EGX Index Analysis", readOnlyHint=True, destructiveHint=False, openWorldHint=True))
-def egx_index_analysis(index: str = "EGX30", timeframe: str = "1D", limit: int = 30) -> dict:
-    """Analyse an EGX index showing constituent performance with full indicators.
-
-    Args:
-        index: EGX30, EGX70, EGX100, SHARIAH33, EGX35LV, TAMAYUZ
-        timeframe: One of 5m, 15m, 1h, 4h, 1D, 1W, 1M (default 1D)
-        limit: Number of stocks to show in detail (max 100)
-    """
-    limit = max(1, min(limit, 100))
-    try:
-        timeframe = validate_timeframe(timeframe, "1D")
-        return analyze_egx_index(index, timeframe, limit)
-    except Exception as e:
-        return exception_to_envelope(e, context="egx_index_analysis")
-
-
-@mcp.tool(annotations=ToolAnnotations(title="EGX Stock Screener", readOnlyHint=True, destructiveHint=False, openWorldHint=True))
-def egx_stock_screener(
-    timeframe: str = "1D",
-    min_score: int = 55,
-    index_filter: str = "",
-    limit: int = 20,
-) -> dict:
-    """Production stock ranking engine for EGX — finds strong stocks with actionable setups.
-
-    Args:
-        timeframe: One of 5m, 15m, 1h, 4h, 1D, 1W, 1M (default 1D)
-        min_score: Minimum stock score to include (0-100, default 55)
-        index_filter: Filter by index — EGX30, EGX70, EGX100, SHARIAH33, EGX35LV, TAMAYUZ
-        limit: Number of results (max 50)
-    """
-    min_score = max(0, min(100, min_score))
-    limit = max(1, min(50, limit))
-    try:
-        timeframe = validate_timeframe(timeframe, "1D")
-        return screen_egx_stocks(timeframe, min_score, index_filter, limit)
-    except Exception as e:
-        return exception_to_envelope(e, context="egx_stock_screener")
-
-
-@mcp.tool(annotations=ToolAnnotations(title="EGX Trade Plan", readOnlyHint=True, destructiveHint=False, openWorldHint=True))
-def egx_trade_plan(symbol: str, timeframe: str = "1D") -> dict:
-    """Generate a full trade plan for a specific EGX stock.
-
-    Args:
-        symbol: EGX stock symbol (e.g., "COMI", "TMGH", "FWRY")
-        timeframe: One of 5m, 15m, 1h, 4h, 1D, 1W, 1M (default 1D)
-    """
-    try:
-        timeframe = validate_timeframe(timeframe, "1D")
-        return generate_egx_trade_plan(symbol, timeframe)
-    except Exception as e:
-        return exception_to_envelope(e, context="egx_trade_plan")
-
-
-@mcp.tool(annotations=ToolAnnotations(title="EGX Fibonacci Retracement", readOnlyHint=True, destructiveHint=False, openWorldHint=True))
-def egx_fibonacci_retracement(symbol: str, lookback: str = "52W", timeframe: str = "1D") -> dict:
-    """Fibonacci retracement analysis for EGX stocks.
-
-    Args:
-        symbol: EGX stock symbol (e.g., "COMI", "TMGH", "FWRY")
-        lookback: Period for swing high/low — "1M", "3M", "6M", "52W", "ALL" (default 52W)
-        timeframe: Analysis timeframe (5m, 15m, 1h, 4h, 1D, 1W, 1M — default 1D)
-    """
-    lookback = lookback.strip().upper()
-    try:
-        timeframe = validate_timeframe(timeframe, "1D")
-        return analyze_egx_fibonacci(symbol, lookback, timeframe)
-    except Exception as e:
-        return exception_to_envelope(e, context="egx_fibonacci_retracement")
-
-
 # ── Smart-money / banker-fund tools ───────────────────────────────────────────
 
 @mcp.tool(annotations=ToolAnnotations(title="Smart Money Analysis", readOnlyHint=True, destructiveHint=False, openWorldHint=True))
@@ -637,33 +493,6 @@ def smart_money_analysis(
         return analyze_smart_money(symbol, exchange, period, interval)
     except Exception as e:
         return exception_to_envelope(e, context="smart_money_analysis")
-
-
-@mcp.tool(annotations=ToolAnnotations(title="EGX Smart Money Scanner", readOnlyHint=True, destructiveHint=False, openWorldHint=True))
-def egx_smart_money_scanner(
-    index: str = "EGX30",
-    limit: int = 10,
-    period: str = "6mo",
-    min_score: float = 0.0,
-) -> dict:
-    """Rank EGX index constituents by smart-money accumulation evidence.
-
-    Runs the full smart_money_analysis per constituent (Yahoo .CA history,
-    bounded thread pool) and ranks by the volume-flow composite score, with
-    the banker decomposition and oscillator state attached per row. Rows the
-    data source can't serve are listed under `skipped`, never silently
-    dropped.
-
-    Args:
-        index: EGX30 | EGX70 | EGX100 | SHARIAH33 | EGX35LV | TAMAYUZ
-        limit: Max ranked rows to return (default 10, max 50)
-        period: History window — 1mo | 3mo | 6mo | 1y | 2y (default 6mo)
-        min_score: Only include rows with composite score >= this (0-100)
-    """
-    try:
-        return scan_egx_smart_money(index, limit, period, min_score)
-    except Exception as e:
-        return exception_to_envelope(e, context="egx_smart_money_scanner")
 
 
 # ── Multi-timeframe analysis ───────────────────────────────────────────────────
